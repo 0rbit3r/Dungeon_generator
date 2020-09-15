@@ -51,9 +51,9 @@ makeSnake :: DungeonMap         -- ^Original dungeon to add the hallway to
              -> [Int]           -- ^Infinite list of pseudorandom numbers
              -> DungeonMap      -- ^Resulting dungeon with the hallway added
 makeSnake dungeon (x,y,length) maxLen dir randoms
-    | (x == 1) || x == ((getWidth dungeon) - 2) || (y==1) || (y==((getHeight dungeon) - 2)) = endWithRoom dungeon (x,y) randoms
-    | length == maxLen = endWithRoom dungeon (x,y) randoms
-    | currPix /= cell_EMPTY = dungeon --Add door?
+    | length >= maxLen = endWithRoom dungeon (x,y) randoms
+    | (x0 == 1) || x0 == ((getWidth dungeon) - 2) || (y0==1) || (y0==((getHeight dungeon) - 2)) = makeSnake dungeon (x, y, length + 1) maxLen (rotR dir) (drop 2 randoms) --endWithRoom dungeon (x,y) randoms
+    | currPix /= cell_EMPTY = dungeon
     | otherwise = makeSnake newDungeon (x0,y0, length + 1) maxLen dir0 (drop 2 randoms)
     where
         newDungeon = setPixel dungeon x y cell_HALLWAY
@@ -66,54 +66,52 @@ makeSnake dungeon (x,y,length) maxLen dir randoms
         y0 = y + snd (gtVect dir0)
 
 
-
-makeBegleri :: DungeonMap
-                 -> [Int]
-                 -> Int 
-                 -> DungeonMap
+-- |Creates a structure with at least one Room and a hallway exiting from it.
+-- First the function randomly selects a spot for the first room. If the spot is not suitable the function will recursively try again (up to "trys" times)
+-- Then it randomly selects direction and location of the hallway using 'getEnterance'
+-- The hallway is build using 'makeSnake'. Therefore the hallway can end either with a room or by attaching to another structure.
+makeBegleri :: DungeonMap   	-- ^Initial Dungeon
+                 -> [Int]       -- ^Infinite list of random numbers from 0 to 1000
+                 -> Int         -- ^Number of trys the function should put into finding suitable spot
+                 -> DungeonMap  -- ^Resulting dungeon
 makeBegleri dungeon randoms trys
     | trys <= 0             = dungeon
     | availableSpace < 3    = makeBegleri dungeon (drop 2 randoms) (trys - 1)
     | otherwise             
             = makeSnake roomedMap (doorX, doorY, 0) 30 dir (drop 7 randoms) 
     where
-        x               = randomNum (randoms !! 0) (1, getWidth dungeon - 2)
-        y               = randomNum (randoms !! 1) (1, getHeight dungeon - 2)
+        x               = randomNum (randoms !! 0) (3, getWidth dungeon - 4)
+        y               = randomNum (randoms !! 1) (3, getHeight dungeon - 4)
         availableSpace  = (fst $ getFreeSpace dungeon (x,y)) - 2
         roomWidth       = max 3 $ availableSpace - (randomNum (randoms !! 2) (0,4))
         roomHeight      = max 3 $ availableSpace - (randomNum (randoms !! 3) (0,4))
         roomedMap       = createRoom dungeon (x,y) (roomWidth, roomHeight)
         (dir, (doorX, doorY))       = getEnterance dungeon (x,y) (roomWidth, roomHeight) (drop 4 randoms)
-
--- | TODO: check for bounds errors
--- Generates random coordinates of an enterance to a given room
-
-getEnterance :: DungeonMap
-                -> (Int, Int)
-                -> (Int, Int)
-                -> [Int]
-                -> (Direction, (Int, Int))
+        
+--
+-- |Generates random coordinates of an enterance to a given room and the natural direction from it.
+getEnterance :: DungeonMap                  -- ^The dungeon to modify
+                -> (Int, Int)               -- ^Center X and Y coordinates of the room
+                -> (Int, Int)               -- ^Dimensions of the room
+                -> [Int]                    -- ^Infinite list of random numbers from 0 to 1000
+                -> (Direction, (Int, Int))  -- ^The direction and coordinates of the start of a hallway
 getEnterance dungeon (x, y) (width, height) randoms 
-    | dir == Dup    = (Dup, (x + randX, y - halfY - 1))
-    | dir == Ddown  = (Ddown, (x + randX, y + halfY + 1))
-    | dir == Dleft  = (Dleft, (x - halfX - 1, y + randY))
-    | dir == Dright = (Dright, (x + halfX + 1, y + randY))
+    | dir == Dup    && checkBounds dungeon (x + randX) (y - halfY - 1) = (Dup, (x + randX, y - halfY - 1))
+    | dir == Ddown  && checkBounds dungeon (x + randX) (y + halfY + 1) = (Ddown, (x + randX, y + halfY + 1))
+    | dir == Dleft  && checkBounds dungeon (x - halfX - 1) (y + randY) = (Dleft, (x - halfX - 1, y + randY))
+    | dir == Dright && checkBounds dungeon (x + halfX + 1) (y + randY) = (Dright, (x + halfX + 1, y + randY))
+    | otherwise = getEnterance dungeon (x, y) (width, height) (drop 1 randoms)
     where
-        rand = (randoms !! 0)
         randX = randomNum (randoms !! 1) (-1 * halfX, halfX)
         halfX =  div width 2
         randY = randomNum (randoms !! 2) (-1 * halfY, halfY)
         halfY = div height 2
+        rand = (randoms !! 0)
         dir
-            | (rand < 250) && (y - halfY > 3) = Dup
-            | (rand < 500) && (y + halfY < getHeight dungeon - 4) = Ddown
-            | (rand < 750) && (x - halfX > 3) = Dleft
-            | (x + halfX < getWidth dungeon - 4)  = Dright
-            | (y - halfY > 3) = Dup
-            | (y + halfY < getHeight dungeon - 4) = Ddown
-            | otherwise = Dleft
-
-
+            | (rand < 250) = Dup
+            | (rand < 500) = Ddown
+            | (rand < 750) = Dleft
+            | otherwise = Dright
 
 -- | Used to make a Room at the end of a hallway. This function finds how big a room can be and then it randomises the shape a little
 endWithRoom ::  DungeonMap      -- ^The Dungeon
@@ -173,62 +171,65 @@ getFreeSpace0 dungeon (x,y) (centerX, centerY) size limit
         xEnd = min ((getWidth dungeon) - 2) $ (centerX + size `div` 2)
         yEnd = min ((getHeight dungeon) - 2) $ (centerY + size `div` 2)
 
-
-createDungeon :: DungeonMap -> [Int] -> Int -> DungeonMap
+-- |Creates the dungeon by repeatedly calling 'makeBegleri'
+createDungeon :: DungeonMap     -- ^Initial dungeon (usually 'emptyMap')
+                -> [Int]        -- ^infinite list of random numbers from 0 to 1000
+                -> Int          -- ^Number of begleries to try to fit into the map.
+                -> DungeonMap   -- ^Resulting dungeon
 createDungeon dungeon randoms begleriNum
     | begleriNum <= 0   = dungeon
-    | otherwise         = createDungeon (makeBegleri dungeon randoms 5) (drop 100 randoms) (begleriNum - 1)
+    | otherwise         = createDungeon (makeBegleri dungeon randoms 5) (drop 1000 randoms) (begleriNum - 1)
 
--- >>>consoleRender $ createDungeon (emptyMap 40 40) (randomNums (mkStdGen 5) (0,1000)) 20
+
+
+
+
+
+-- >>>consoleRender $ createDungeon (emptyMap 40 40) (randomNums (mkStdGen 29) (0,1000)) 30
 --                                                                                 
---                       OOOOOOOOOOOOOO                                            
---                       OOOOOOOOOOOOOO                                            
---                       OOOOOOOOOO                                        OOOOOO  
---                       OOOOOOOOOO                                        OOOOOO  
---                                     OOOOOO                          ####OOOOOO  
---     OOOOOOOOOOOOOO                  OOOOOO                          ##  OOOOOO  
---     OOOOOOOOOOOOOO                  OOOOOO                          ##  OOOOOO  
---     OOOOOOOOOOOOOO                  OOOOOO##########                ##          
---     OOOOOOOOOOOOOO############      OOOOOO        ##          OOOOOOOOOO        
---     OOOOOOOOOOOOOO      ##  ##                    ##          OOOOOOOOOO        
---     OOOOOOOOOOOOOO      OOOOOOOOOOOOOO            ##          OOOOOOOOOO        
---     OOOOOOOOOOOOOO      OOOOOOOOOOOOOO            ############OOOOOOOOOO        &
---   OOOO                  OOOOOOOOOOOOOO          ######        OOOOOOOOOO        
---   OOOO                  OOOOOOOOOOOOOO          ##  ##                          
---   OOOOOO                OOOOOOOOOOOOOO    OOOOOO##  OOOOOO                      
---   OOOOOO                OOOOOOOOOOOOOO    OOOOOO##  OOOOOO                      
---   OOOOOO                OOOOOOOOOOOOOO    OOOOOO##  OOOOOO        OOOOOOOOOO    
---   OOOOOO                    ##            ####  ##                OOOOOOOOOO    
---   OOOOOO                    ##################  ####              OOOOOOOOOO    
---   OOOOOO                                ##        ##              OOOOOOOOOO    
---   OOOOOO                                ##        ##              OOOOOOOOOO    
---                                         ##        ##              ##            
---   OOOO            OOOOOOOOOO            ##        OOOOOOOOOO      ##            
---   OOOO############OOOOOOOOOO            ##        OOOOOOOOOO########            
---   OOOO            OOOOOOOOOO      OOOOOOOOOOOOOO  OOOOOOOOOO      ##            
---   OOOO            ##              OOOOOOOOOOOOOO  OOOOOOOOOO########            
---   OOOO            ##              OOOOOOOOOOOOOO  OOOOOOOOOO            OOOOOO  
---   OOOOOOOOOOOOOO  ##              OOOOOOOOOOOOOO                        OOOOOO  
---   OOOOOOOOOOOOOO  ####OOOOOO      OOOOOOOOOOOOOO                OOOOOO##OOOOOO  
---   OOOOOOOOOOOOOO      OOOOOO      OOOOOOOOOOOOOO                OOOOOO  OOOOOO  
---   OOOOOOOOOOOOOO      OOOOOO      OOOOOOOOOOOOOO                OOOOOO  OOOOOO  
---   OOOOOOOOOOOOOO                        ############################            
---                       OOOOOOOOOO        ####                      ##            
---   OOOOOO              OOOOOOOOOO####OOOOOOOOOOOOOO####################          
---   OOOOOO              OOOOOOOOOO    OOOOOOOOOOOOOO    OOOOOOOOOOOOOO##          
---   OOOOOO############################OOOOOOOOOOOOOO####OOOOOOOOOOOOOO##          
---   OOOOOO                            OOOOOOOOOOOOOO    OOOOOOOOOOOOOOOOOO        
---   OOOOOO                            OOOOOOOOOOOOOO    OOOOOOOOOOOOOOOOOO        
+--     ##############          ######                            ##########        
+--     ##          ##          ##  ##  ######            ######  ##############    
+--     ##          ##          ##  ##  ######            ##################  ##    
+--     ##          ##          ##  ##  ######            ######  ##########  ##    
+--     ##          ##          ##  ##  ##                        ##########  ##    
+--     ##          ##        ########  ##                                    ##    
+--     ##  ##############    ########  ##                                    ##    
+--     ##  ##############    ########  ##                                    ##    
+--     ##  ##############          ##  ##                                    ##    
+--     ##  ##############          ##  ##############                        ##    
+--     ##################          ##    ##        ##          ######        ##    
+--     ##  ##############          ##    ##        ##          ################    
+--     ##  ##############          ##    ##        ##          ######        ##    
+--     ####    ##                  ##    ##        ##                        ##    
+--       ##  ######                ##    ##        ##############            ##    
+--       ##  ######                ##    ##        ##############            ##    
+--       ##  ######                ##    ##        ##############            ##    
+--       ##                        ##    ##        ##############            ##    
+--       ##    ############################        ##############            ##    
+--       ##    ##############            ##                                  ##    
+--       ##    ##############            ##                                  ##    
+--       ##    ##############            ##                                  ##    
+--       ##    ##############            ##        ####################      ##    
+--       ##    ##############            ##        ##                ##      ##    
+--       ##    ##############    ######  ##        ##                ##      ##    
+--       ##                    ########  ##        ##                ##      ##    
+--       ##                    ########  ##        ##          ##########    ##    
+--     ########                ##        ##        ##  ######  ##########    ##    
+--     ##########################        ##        ##  ######  ##########    ##    
+--     ########              ####      ######      ##  ######                ##    
+--     ########              ####      ######      ##  ##                    ##    
+--     ########              ####      ######      ##  ##  ######            ##    
+--     ########  ######      ####                  ######  ######    ######  ##    
+--     ########  ######      ####                  ##      ####################    
+--               ######      ####        ######    ##      ######    ######        
+--                 ##        ####        ############      ######                  
+--                                                                                 
 --                                                                                 
 --
 
 
--- >>> randomNum 420 (100,150)
--- 121
---
-
--- >>>take 20 (randomNums (mkStdGen 10) (0,1000))
--- [942,533,979,879,140,143,940,149,6,249,978,495,398,350,833,904,301,68,111,307]
+-- >>>take 20 (randomNums (mkStdGen 4) (0,1000))
+-- [29,526,311,93,723,139,329,263,436,824,756,418,561,375,511,227,891,750,851,560]
 --
 
 -- >>> getFreeSpace (makeSnake (createRoom (emptyMap 20 20) (5, 10) (4, 4)) (13,13,0) 20 Dleft (randomNums  (mkStdGen 1) (0 ,1000))) (2,10)
@@ -242,49 +243,3 @@ createDungeon dungeon randoms begleriNum
 -- >>> getPixel (makeSnake (createRoom (emptyMap 20 20) (5, 10) (4, 4)) (13,13,0) 20 Dleft (randomNums  (mkStdGen 1) (0 ,1000))) 3 10
 -- 'R'
 --
-
--- >>> consoleRender (makeSnake (emptyMap 20 20) (13,13,0) 15 Dleft (randomNums  (mkStdGen 5678674568) (0 ,1000)))
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________________________
--- ________________________HHHH____________
--- ________________________HH______________
--- ________________________HH______________
--- __________________RRRRRRRRRRRRRR________
--- __________________RRRRRRRRRRRRRR________
--- __________________RRRRRRRRRRRRRR________
--- ________________________________________
---
-
-
--- 0 1 2 3 4 5 6 7 8 9 10111213141516171819
--- ________________________________________ 0
--- ________________________________________ 1
--- ________________________________________ 2
--- ________________________________________ 3
--- ________________________________________ 4
--- __________XX____________________________ 5
--- ________________________________________ 6
--- ________________________________________ 7
--- ______RRRRRRRRRR________________________ 8
--- ______RRRRRRRRRR________________________ 9
--- ____XXRRRR  RRRR______XX________________ 10
--- ______RRRRRRRRRR________________________ 11
--- ______RRRRRRRRRR________________________ 12
--- ______HH________________HHHH____________ 13
--- ______HHHHHHHHHHHHHHHHHHHH______________ 14
--- ________________________________________ 15
--- ________________________________________ 16
--- ________________________________________ 17
--- ________________________________________ 18
--- ________________________________________ 19

@@ -3,54 +3,56 @@ where
     
 import Data.Array
 
-
+-- | Used as a console rendering character.
+cell_EMPTY :: Char
 cell_EMPTY = ' '
-cell_ROOM = 'O'
+-- | Used as a console rendering character.
+cell_ROOM :: Char
+cell_ROOM = '#'
+-- | Used as a console rendering character.
+cell_HALLWAY :: Char
 cell_HALLWAY = '#'
 
+-- |Used as a holder for the 2D array that represents the Dungeon and its dimensions.
 data DungeonMap = Invalid | DungeonMap (Array (Int, Int) Char) (Int, Int)
 
-emptyMap :: Int -> Int -> DungeonMap
+-- |Creates new empt dungeon with given dimensions.
+emptyMap :: Int             -- ^width
+            -> Int          -- ^height
+            -> DungeonMap   -- ^Resulting dungeon
 emptyMap n m = DungeonMap (array ((0,0),(n - 1, m - 1)) [((a,b),cell_EMPTY) | a <- [0..(n-1)], b <- [0..(m-1)]]) (n,m)
 
-getPixel :: DungeonMap -> Int -> Int -> Char
+-- | Returns a pixel of the map at given coordinates.
+getPixel :: DungeonMap  -- ^The Dungeon
+            -> Int      -- ^The x coordinate
+            -> Int      -- ^The y one.
+            -> Char     -- ^The result
 getPixel dungeon@(DungeonMap arr _) x y
     | checkBounds dungeon x y =  arr ! (x,y)
     | otherwise = cell_EMPTY
 
-setPixel :: DungeonMap -> Int -> Int -> Char -> DungeonMap
+-- |Sets a pixel in the dungeon to the given one. Only way to directly modify a dungeon. 
+setPixel :: DungeonMap      -- ^Initial dungeon
+            -> Int          -- ^The x coordinate
+            -> Int          -- ^The y coordinate
+            -> Char         -- ^The char to which to set the pixel
+            -> DungeonMap   -- ^The resulting dungeon
 setPixel dungeon@(DungeonMap arr dims) x y char
     | checkBounds dungeon x y =  DungeonMap (arr // [((x,y), char)]) dims
     | otherwise = dungeon
 
+-- |Returns width of the dungeon
 getWidth :: DungeonMap -> Int
 getWidth (DungeonMap _ (width, _)) = width
 
+-- |Returns height of the dungeon
 getHeight :: DungeonMap -> Int
 getHeight (DungeonMap _ (_, height)) = height
 
+-- |Returns True if the pixel lies in workable area of the dungeon (There is a margin of length 1 pixel at every side)
 checkBounds :: DungeonMap -> Int -> Int -> Bool
 checkBounds dungeon x y =
-    x > 0 && x < width - 1 && y > 0 && y < height - 1
+    x > 1 && x < width - 2 && y > 1 && y < height - 2
     where
         width = getWidth dungeon
         height = getHeight dungeon
-
-
--- >>> emptyMap 5 5 ! (3,2)
--- '0'
---
-
--- >>> (array (1,10) [(a, 'h') | a <- [1..10]]) ! 5
--- 'h'
---
-
--- >>> getPixel (emptyMap 5 5) 3 2
--- '0'
---
--- >>> setPixel (emptyMap 3 3) 1 2 'h'
--- array ((0,0),(2,2)) [((0,0),'0'),((0,1),'0'),((0,2),'0'),((1,0),'0'),((1,1),'0'),((1,2),'h'),((2,0),'0'),((2,1),'0'),((2,2),'0')]
---
--- >>> length (emptyMap 4 5)
--- 20
---
